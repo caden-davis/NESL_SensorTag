@@ -17,7 +17,9 @@ DPEng_BMX160 BMX160sensor = DPEng_BMX160(0x160A, 0x160B, 0x160C);
 
 #define MODE_SELECT_PIN   D7
 
-uint32_t fileSize = 4000; // ASK
+#define ERASE false
+
+uint32_t fileSize = 4000; // ADJUST
 uint32_t filePosition = 0;
 
 char filename[32];
@@ -37,7 +39,7 @@ struct MS5837data {
   float altitude; // m above sea level
 } temppres;
 
-void setAndIncrementFilename();
+void updateFilename();
 void setRegister(uint32_t index, uint32_t value);
 uint32_t getRegister(uint32_t index);
 bool eraseFileContent(const char* filename);
@@ -78,15 +80,16 @@ void setup(void)
   SerialFlash.begin(CS);
 
   // erase the flash (optional)
-  // Serial.println("Erasing Flash..."); SerialFlash.eraseAll();
-  // reset the backup register value to 0 (optional)
-  // setRegister(1, 0);
+  if (ERASE) {
+    Serial.println("Erasing Flash..."); SerialFlash.eraseAll();
+    // reset the backup register value to 0 (optional)
+    setRegister(1, 0);
+  }
   
   while (!SerialFlash.ready()) {
     delay(100);
   }
-  // setAndIncrementFilename();
-  filename = setAndIncrementFilename(filename);
+  filename = updateFilename(filename);
   if (SerialFlash.exists(filename)) {
     // SerialFlash.remove(filename);  // It doesn't reclaim the space, but it does let you create a new file with the same name.
     eraseFileContent(filename);
@@ -98,7 +101,7 @@ void setup(void)
 }
 
 // BMX160 Functions
-void readBMX160() {
+void readBMX160() { // (BMX160data& accel, BMX160data& gyro, BMX160data& magneto)
   sensors_event_t aevent, gevent, mevent;
 
   // get a sensor event
@@ -136,9 +139,10 @@ temppres.altitude = MS5837sensor.altitude(); // m above sea level
 */
 
 // Flash Functions
-bool writeBufferToFile(const char* filename) {
-  SerialFlashFile file;
-  file = SerialFlash.open(filename);
+// bool writeBufferToFile(const char* filename) {
+bool writeBufferToFile(SerialFlashFile file) {
+  // SerialFlashFile file;
+  // file = SerialFlash.open(filename);
   if (file) {
     file.seek(filePosition);
     filePosition += 256;
@@ -167,12 +171,9 @@ bool writeBMX160ToFile(const char* filename) {
   SerialFlashFile file;
   file = SerialFlash.open(filename);
   if (file) {
-  // convert sensor readings from int16_t to const char* (C-string)
+  // convert sensor readings from float to char array (C-string)
   char accel_x[16];
-  // itoa(accel.x, accel_x, 10);
   dtostrf(accel.x, 4, 3, accel_x);
-  // Serial.println("Accel x test");
-  // Serial.println(accel_x);
   char accel_y[16];
   dtostrf(accel.y, 4, 3, accel_y);
   char accel_z[16];
@@ -216,7 +217,7 @@ bool writeBMX160ToFile(const char* filename) {
   strcat(flashBuffer, "\n");
   
   // write buffer
-  return writeBufferToFile(filename);
+  return writeBufferToFile(file);
   } else {
     return false;
   }
@@ -248,7 +249,7 @@ bool writeMS5837ToFile(const char* filename) {
   strcat(flashBuffer, "\n");
 
   // write buffer
-  return writeBufferToFile(filename);
+  return writeBufferToFile(file);
   } else {
     Serial.println("Error opening file");
     return false;
@@ -285,7 +286,7 @@ uint32_t getRegister(uint32_t index) {
   return LL_RTC_BAK_GetRegister(RTC, index);
 }
 
-const char* setAndIncrementFilename(const char* filename) {
+const char* updateFilename(const char* filename) {
   strcpy(filename, "file");
   uint32_t reg = getRegister(1);
   char r[16];
